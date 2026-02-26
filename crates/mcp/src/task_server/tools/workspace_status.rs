@@ -126,7 +126,66 @@ struct MarkTurnsSeenResponse {
     workspace_id: String,
 }
 
-// --- stop_execution types ---
+// --- get_workspace_changes types ---
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct GetWorkspaceChangesRequest {
+    #[schemars(
+        description = "Workspace ID to get change details for. Optional if running inside that workspace context."
+    )]
+    workspace_id: Option<Uuid>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepoBranchStatusRaw {
+    repo_id: Uuid,
+    repo_name: String,
+    commits_behind: Option<usize>,
+    commits_ahead: Option<usize>,
+    has_uncommitted_changes: Option<bool>,
+    head_oid: Option<String>,
+    uncommitted_count: Option<usize>,
+    untracked_count: Option<usize>,
+    target_branch_name: String,
+    is_rebase_in_progress: bool,
+    conflicted_files: Vec<String>,
+    is_target_remote: bool,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct McpRepoChanges {
+    #[schemars(description = "Repository ID")]
+    repo_id: String,
+    #[schemars(description = "Repository name")]
+    repo_name: String,
+    #[schemars(description = "Commits behind target branch")]
+    commits_behind: Option<usize>,
+    #[schemars(description = "Commits ahead of target branch")]
+    commits_ahead: Option<usize>,
+    #[schemars(description = "Whether there are uncommitted changes")]
+    has_uncommitted_changes: Option<bool>,
+    #[schemars(description = "Number of uncommitted file changes")]
+    uncommitted_count: Option<usize>,
+    #[schemars(description = "Number of untracked files")]
+    untracked_count: Option<usize>,
+    #[schemars(description = "Current HEAD commit SHA")]
+    head_oid: Option<String>,
+    #[schemars(description = "Target branch name for merging")]
+    target_branch_name: String,
+    #[schemars(description = "Is a git rebase currently in progress?")]
+    is_rebase_in_progress: bool,
+    #[schemars(description = "Files currently in conflict")]
+    conflicted_files: Vec<String>,
+    #[schemars(description = "Is the target branch remote-only (must use PR)?")]
+    is_target_remote: bool,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct GetWorkspaceChangesResponse {
+    workspace_id: String,
+    repos: Vec<McpRepoChanges>,
+    count: usize,
+}
 
 // --- stop_execution types ---
 
@@ -305,6 +364,65 @@ impl TaskServer {
         TaskServer::success(&MarkTurnsSeenResponse {
             success: true,
             workspace_id: workspace_id.to_string(),
+        })
+    }
+
+    /// REN-5: Get detailed change information for a workspace (branch status, commits, conflicts).
+    #[tool(
+        description = "Get detailed change info for a workspace: commits ahead/behind, uncommitted changes, untracked files, rebase status, and conflicted files per repo. `workspace_id` is optional if running inside that workspace context."
+    )]
+    async fn get_workspace_changes(
+        &self,
+        Parameters(GetWorkspaceChangesRequest { workspace_id }): Parameters<
+            GetWorkspaceChangesRequest,
+        >,
+    ) -> Result<CallToolResult, ErrorData> {
+        let workspace_id = match workspace_id {
+            Some(id) => id,
+            None => match self.context.as_ref() {
+                Some(ctx) => ctx.workspace_id,
+                None => {
+                    return Self::err(
+                        "workspace_id is required (not available from workspace context)",
+                        None::<&str>,
+                    );
+                }
+            },
+        };
+
+        let url = self.url(&format!(
+            "/api/task-attempts/{}/branch-status",
+            workspace_id
+        ));
+        let statuses: Vec<RepoBranchStatusRaw> =
+            match self.send_json(self.client.get(&url)).await {
+                Ok(s) => s,
+                Err(e) => return Ok(e),
+            };
+
+        let repos: Vec<McpRepoChanges> = statuses
+            .into_iter()
+            .map(|s| McpRepoChanges {
+                repo_id: s.repo_id.to_string(),
+                repo_name: s.repo_name,
+                commits_behind: s.commits_behind,
+                commits_ahead: s.commits_ahead,
+                has_uncommitted_changes: s.has_uncommitted_changes,
+                uncommitted_count: s.uncommitted_count,
+                untracked_count: s.untracked_count,
+                head_oid: s.head_oid,
+                target_branch_name: s.target_branch_name,
+                is_rebase_in_progress: s.is_rebase_in_progress,
+                conflicted_files: s.conflicted_files,
+                is_target_remote: s.is_target_remote,
+            })
+            .collect();
+
+        let count = repos.len();
+        TaskServer::success(&GetWorkspaceChangesResponse {
+            workspace_id: workspace_id.to_string(),
+            repos,
+            count,
         })
     }
 
