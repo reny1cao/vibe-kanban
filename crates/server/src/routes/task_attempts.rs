@@ -1582,6 +1582,17 @@ pub async fn get_first_user_message(
     Ok(ResponseJson(ApiResponse::success(message)))
 }
 
+/// Get all coding agent turns for a workspace (prompt + summary pairs)
+#[axum::debug_handler]
+pub async fn get_agent_output(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+) -> Result<ResponseJson<ApiResponse<Vec<CodingAgentTurn>>>, ApiError> {
+    let pool = &deployment.db().pool;
+    let turns = CodingAgentTurn::find_by_workspace_id(pool, workspace.id).await?;
+    Ok(ResponseJson(ApiResponse::success(turns)))
+}
+
 pub async fn delete_workspace(
     Extension(workspace): Extension<Workspace>,
     State(deployment): State<DeploymentImpl>,
@@ -2092,6 +2103,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
                 .route("/rename-branch", post(rename_branch))
                 .route("/repos", get(get_task_attempt_repos))
                 .route("/first-message", get(get_first_user_message))
+                .route("/agent-output", get(get_agent_output))
                 .route("/mark-seen", put(mark_seen))
                 .route("/link", post(link_workspace))
                 .layer(from_fn_with_state(

@@ -8,6 +8,26 @@ use uuid::Uuid;
 
 use super::TaskServer;
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct CreateRepoRequest {
+    #[schemars(description = "Absolute path to the local git repository")]
+    path: String,
+    #[schemars(description = "Optional display name for the repository")]
+    display_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+struct CreateRepoResponse {
+    #[schemars(description = "Whether the registration was successful")]
+    success: bool,
+    #[schemars(description = "The unique identifier of the registered repository")]
+    id: String,
+    #[schemars(description = "The name of the repository")]
+    name: String,
+    #[schemars(description = "The display name of the repository")]
+    display_name: String,
+}
+
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 struct McpRepoSummary {
     #[schemars(description = "The unique identifier of the repository")]
@@ -80,6 +100,30 @@ struct ListReposResponse {
 
 #[tool_router(router = repos_tools_router, vis = "pub")]
 impl TaskServer {
+    #[tool(
+        description = "Register a local git repository so it can be used in workspaces. Returns the repo ID needed for `start_workspace_session`."
+    )]
+    async fn create_repo(
+        &self,
+        Parameters(CreateRepoRequest { path, display_name }): Parameters<CreateRepoRequest>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let url = self.url("/api/repos");
+        let mut payload = serde_json::json!({ "path": path });
+        if let Some(name) = &display_name {
+            payload["display_name"] = serde_json::json!(name);
+        }
+        let repo: Repo = match self.send_json(self.client.post(&url).json(&payload)).await {
+            Ok(r) => r,
+            Err(e) => return Ok(e),
+        };
+        TaskServer::success(&CreateRepoResponse {
+            success: true,
+            id: repo.id.to_string(),
+            name: repo.name,
+            display_name: repo.display_name,
+        })
+    }
+
     #[tool(description = "List all repositories.")]
     async fn list_repos(&self) -> Result<CallToolResult, ErrorData> {
         let url = self.url("/api/repos");

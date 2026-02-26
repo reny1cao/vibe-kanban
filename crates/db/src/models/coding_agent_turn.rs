@@ -215,6 +215,36 @@ impl CodingAgentTurn {
         Ok(())
     }
 
+    /// Find all coding agent turns for a workspace (most recent first)
+    pub async fn find_by_workspace_id(
+        pool: &SqlitePool,
+        workspace_id: Uuid,
+    ) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as!(
+            CodingAgentTurn,
+            r#"SELECT
+                cat.id as "id!: Uuid",
+                cat.execution_process_id as "execution_process_id!: Uuid",
+                cat.agent_session_id,
+                cat.agent_message_id,
+                cat.prompt,
+                cat.summary,
+                cat.seen as "seen!: bool",
+                cat.created_at as "created_at!: DateTime<Utc>",
+                cat.updated_at as "updated_at!: DateTime<Utc>"
+               FROM coding_agent_turns cat
+               JOIN execution_processes ep ON cat.execution_process_id = ep.id
+               JOIN sessions s ON ep.session_id = s.id
+               WHERE s.workspace_id = $1
+                 AND ep.run_reason = 'codingagent'
+                 AND ep.dropped = FALSE
+               ORDER BY cat.created_at DESC"#,
+            workspace_id
+        )
+        .fetch_all(pool)
+        .await
+    }
+
     /// Mark all coding agent turns for a workspace as seen
     pub async fn mark_seen_by_workspace_id(
         pool: &SqlitePool,

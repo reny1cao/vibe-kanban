@@ -19,6 +19,7 @@ mod remote_issues;
 mod remote_projects;
 mod repos;
 mod task_attempts;
+mod workspace_status;
 mod workspaces;
 
 impl TaskServer {
@@ -35,7 +36,8 @@ impl TaskServer {
                 + Self::issue_assignees_tools_router()
                 + Self::issue_tags_tools_router()
                 + Self::issue_relationships_tools_router()
-                + Self::task_attempts_tools_router(),
+                + Self::task_attempts_tools_router()
+                + Self::workspace_status_tools_router(),
             context: None,
         }
     }
