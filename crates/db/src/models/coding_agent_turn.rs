@@ -279,6 +279,7 @@ impl CodingAgentTurn {
                 JOIN execution_processes ep ON cat.execution_process_id = ep.id
                 JOIN sessions s ON ep.session_id = s.id
                 WHERE s.workspace_id = $1 AND cat.seen = 0
+                  AND ep.dropped = FALSE
             ) as "has_unseen!: bool""#,
             workspace_id
         )
@@ -299,7 +300,8 @@ impl CodingAgentTurn {
                JOIN execution_processes ep ON cat.execution_process_id = ep.id
                JOIN sessions s ON ep.session_id = s.id
                JOIN workspaces w ON s.workspace_id = w.id
-               WHERE cat.seen = 0 AND w.archived = $1"#,
+               WHERE cat.seen = 0 AND w.archived = $1
+                 AND ep.dropped = FALSE"#,
             archived
         )
         .fetch_all(pool)
