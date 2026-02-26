@@ -369,7 +369,7 @@ impl TaskServer {
 
     /// REN-5: Get detailed change information for a workspace (branch status, commits, conflicts).
     #[tool(
-        description = "Get detailed change info for a workspace: commits ahead/behind, uncommitted changes, untracked files, rebase status, and conflicted files per repo. `workspace_id` is optional if running inside that workspace context."
+        description = "Get detailed change info for a workspace with an active worktree: commits ahead/behind, uncommitted changes, untracked files, rebase status, and conflicted files per repo. Only works for workspaces that have a running or recently completed process (not archived/cleaned-up ones). `workspace_id` is optional if running inside that workspace context."
     )]
     async fn get_workspace_changes(
         &self,
@@ -397,7 +397,13 @@ impl TaskServer {
         let statuses: Vec<RepoBranchStatusRaw> =
             match self.send_json(self.client.get(&url)).await {
                 Ok(s) => s,
-                Err(e) => return Ok(e),
+                Err(e) => {
+                    // 500 typically means the workspace worktree doesn't exist (archived/cleaned)
+                    return Self::err(
+                        "Cannot get branch status — workspace may not have an active worktree (archived or cleaned up)",
+                        Some(&workspace_id.to_string()),
+                    );
+                }
             };
 
         let repos: Vec<McpRepoChanges> = statuses
